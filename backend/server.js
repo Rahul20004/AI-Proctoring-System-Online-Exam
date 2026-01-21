@@ -1,114 +1,119 @@
 import express from "express";
 import dotenv from "dotenv";
-import { errorHandler, notFound } from "./middleware/errorMiddleware.js";
-import connectDB from "./config/db.js";
+import mongoose from "mongoose";
 import cookieParser from "cookie-parser";
+import cors from "cors";
+import { exec } from "child_process";
+import { writeFileSync } from "fs";
+import path from "path";
+
+import connectDB from "./config/db.js";
+import { errorHandler, notFound } from "./middleware/errorMiddleware.js";
 import examRoutes from "./routes/examRoutes.js";
 import userRoutes from "./routes/userRoutes.js";
 import codingRoutes from "./routes/codingRoutes.js";
 import resultRoutes from "./routes/resultRoutes.js";
-import { exec } from "child_process";
-import fs from "fs";
-import { writeFileSync } from "fs";
-import path from "path";
-import cors from "cors";
-dotenv.config();
-connectDB();
-const app = express();
-const port = process.env.PORT || 5000;
 
-// to parse req body
+// =======================
+// ENV & DATABASE
+// =======================
+dotenv.config(); // IMPORTANT
+connectDB();
+
+// =======================
+// APP
+// =======================
+const app = express();
+const PORT = process.env.PORT || 5000;
+
+// =======================
+// MIDDLEWARE
+// =======================
 app.use(express.json());
-app.use(
-  cors({
-    origin: [
-      "https://ai-proctored-system.vercel.app",
-      "http://localhost:3000",
-      "http://localhost:5000",
-    ],
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-  })
-);
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
+app.use(
+  cors({
+    origin: [
+      "http://localhost:3000",
+      "http://localhost:3001",
+      "https://ai-proctored-system.vercel.app",
+    ],
+    credentials: true,
+  })
+);
+
+// =======================
+// CODE EXECUTION APIs
+// =======================
+
+// Python
 app.post("/run-python", (req, res) => {
-  const { code } = req.body; // Get Python code from request body
-  writeFileSync("script.py", code); // Write code to script.py file
+  const { code } = req.body;
+  writeFileSync("script.py", code);
 
   exec("python script.py", (error, stdout, stderr) => {
-    if (error) {
-      res.send(`Error is: ${stderr}`); // Send error message if any
-    } else {
-      res.send(stdout); // Send output of the Python script
-    }
+    if (error) return res.status(400).send(stderr);
+    res.send(stdout);
   });
 });
 
+// JavaScript
 app.post("/run-javascript", (req, res) => {
-  const { code } = req.body; // Get JavaScript code from request body
-  writeFileSync("script.js", code); // Write code to script.js file
+  const { code } = req.body;
+  writeFileSync("script.js", code);
 
   exec("node script.js", (error, stdout, stderr) => {
-    if (error) {
-      res.send(`Error: ${stderr}`); // Send error message if any
-    } else {
-      res.send(stdout); // Send output of the JavaScript code
-    }
+    if (error) return res.status(400).send(stderr);
+    res.send(stdout);
   });
 });
 
+// Java
 app.post("/run-java", (req, res) => {
-  const { code } = req.body; // Get Java code from request body
-  writeFileSync("Main.java", code); // Write code to Main.java file
+  const { code } = req.body;
+  writeFileSync("Main.java", code);
 
   exec("javac Main.java && java Main", (error, stdout, stderr) => {
-    if (error) {
-      res.send(`Error: ${stderr}`); // Send error message if any
-    } else {
-      res.send(stdout); // Send output of the Java program
-    }
+    if (error) return res.status(400).send(stderr);
+    res.send(stdout);
   });
 });
 
-// Routes
+// =======================
+// ROUTES
+// =======================
 app.use("/api/users", userRoutes);
-app.use("/api/users", examRoutes);
-app.use("/api/users", resultRoutes);
+app.use("/api/exams", examRoutes);
+app.use("/api/results", resultRoutes);
 app.use("/api/coding", codingRoutes);
 
-// we we are deploying this in production
-// make frontend build then
+// =======================
+// PRODUCTION (for Vercel / Render)
+// =======================
 if (process.env.NODE_ENV === "production") {
   const __dirname = path.resolve();
-  // we making front build folder static to serve from this app
-  app.use(express.static(path.join(__dirname, "/frontend/dist")));
+  app.use(express.static(path.join(__dirname, "/frontend/build")));
 
-  // if we get an routes that are not define by us we show then index html file
-  // every enpoint that is not api/users go to this index file
   app.get("*", (req, res) =>
-    res.sendFile(path.resolve(__dirname, "frontend", "dist", "index.html"))
+    res.sendFile(path.resolve(__dirname, "frontend", "build", "index.html"))
   );
 } else {
   app.get("/", (req, res) => {
-    res.send("<h1>server is running </h1>");
+    res.send("API is running...");
   });
 }
 
-// Error handling middleware - must be after all routes
+// =======================
+// ERROR HANDLERS
+// =======================
 app.use(notFound);
 app.use(errorHandler);
 
-// Server
-app.listen(port, () => {
-  console.log(`server is running on http://localhost:${port}`);
+// =======================
+// START SERVER
+// =======================
+app.listen(PORT, () => {
+  console.log(`Server running on http://localhost:${PORT}`);
 });
-
-// Todos:
-// -**POST /api/users**- Register a users
-// -**POST /api/users/auth**- Authenticate a user and get token
-// -**POST /api/users/logout**- logou user and clear cookie
-// -**GET /api/users/profile**- Get user Profile
-// -**PUT /api/users/profile**- Update user Profile
